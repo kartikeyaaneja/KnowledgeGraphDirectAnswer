@@ -365,6 +365,9 @@ def buildGraphQA(verbose=False, override=False):
         for _, row in df.iterrows():
             qas += f"Q: {row['query']}\nA: {row['expected']}\n\n"
             
+            
+        prompt = "Clauses and Numerical Percentages, etc count as nodes"
+        llm_transformer = LLMGraphTransformer(llm=llm, additional_instructions=prompt)
         documents = [Document(page_content=qas)]
         graph_documents = llm_transformer.convert_to_graph_documents(documents)
         
@@ -387,6 +390,7 @@ def buildGraphQA(verbose=False, override=False):
                 if node.id not in seen_ids:
                     seen_ids.add(node.id)
                     print(f"Node ID: {node.id}, Type: {node.type}")
+                    
 """
 Unused in this project as it takes too long
 

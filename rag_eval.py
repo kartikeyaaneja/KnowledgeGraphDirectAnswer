@@ -20,7 +20,7 @@ Expected Answer:
 Predicted Answer:
 {row['predicted']}
 
-Respond only with "Yes" or "No" — no explanations. Does the predicted answer contain the expected answer?
+Respond only with "Yes" or "No" — no explanations. Does one of the sentences in the predicted answer contain the expected answer?
 """
     try:
         response = ollama.chat(
