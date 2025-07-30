@@ -7,15 +7,16 @@ import inflect
 import pandas as pd
 
 # Standard libraries
-
+from tqdm import tqdm
 from datetime import date
-from datetime import datetime
 from pprint import pprint
+from datetime import datetime
 from bs4 import BeautifulSoup
 from typing import Tuple, List
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from transformers import pipeline
+
 
 from FlagEmbedding import FlagReranker
 from pydantic import BaseModel, Field
@@ -46,6 +47,7 @@ from langchain_community.vectorstores.neo4j_vector import remove_lucene_chars
 
 import warnings
 warnings.filterwarnings("ignore")
+tqdm.pandas()
 
 NEO4J_URI=""
 NEO4J_USERNAME=""
@@ -95,9 +97,14 @@ kg = Neo4jGraph(
   database=NEO4J_DATABASE,
 )
 
-qaInput = "./datasets/mcqs_full_answer.json"
-qaOutput = qaInput.replace(".json", ".pkl")
-qaAnswered = "./datasets/mcqs_full_answer_predicted.json"
+dummyQA = "./datasets/qa_dummy.json"
+dummyQAGraph = dummyQA.replace(".json", "_graph.pkl")
+dummyQAAns = dummyQA.replace(".json", "_predicted.json")
+
+actualQARaw = "./datasets/qa_pairs_raw.json"
+actualQA = actualQARaw.replace("_raw", "")
+actualQAGraph = actualQA.replace(".json", "_graph.pkl")
+actualQAAns = actualQA.replace(".json", "_predicted.json")
 
 rawChunks = "./datasets/largeEmbeddings.csv"
 rawChunksGraph = "./datasets/rawChunksGraph.pkl"

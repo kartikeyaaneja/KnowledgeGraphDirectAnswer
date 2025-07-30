@@ -354,42 +354,62 @@ Build graph from a json file of QAs
 - verbose: See QAs and extracted nodes and relationships
 - override: Build graph again instead of loading saved
 """
-def buildGraphQA(verbose=False, override=False):  
-    if os.path.exists(qaOutput) and not override:
-        with open(qaOutput, 'rb') as f:
-            qas, graph_documents = pickle.load(f)
+def buildGraphQA(verbose=False, override=False, dummy=False):
+    if dummy:
+        qaGraph = dummyQAGraph
+        qaInput = dummyQA
+    else:
+        qaGraph = actualQAGraph
+        qaInput = actualQA
+    
+    if os.path.exists(qaGraph) and not override:
+        with open(qaGraph, 'rb') as f:
+            qas_list, graph_documents = pickle.load(f)
     else:
         df = pd.read_json(qaInput)
-        
-        qas = ""
-        for _, row in df.iterrows():
-            qas += f"Q: {row['query']}\nA: {row['expected']}\n\n"
-            
-            
-        prompt = "Clauses and Numerical Percentages, etc count as nodes"
+
+        qas_list = []
+        batch_size = 20
+        qas_batch = []
+
+        for i, row in enumerate(df.itertuples(index=False)):
+            qas_batch.append(f"Q: {row.query}\nA: {row.expected}\n")
+            # Every 20 items or last batch
+            if (i + 1) % batch_size == 0:
+                qas_list.append("\n".join(qas_batch))
+                qas_batch = []
+
+        # Append any remaining QAs
+        if qas_batch:
+            qas_list.append("\n".join(qas_batch))
+
+
+        prompt = "Clauses and Numerical values, etc count as nodes"
         llm_transformer = LLMGraphTransformer(llm=llm, additional_instructions=prompt)
-        documents = [Document(page_content=qas)]
+        documents = [Document(page_content=qa) for qa in qas_list]
         graph_documents = llm_transformer.convert_to_graph_documents(documents)
-        
-        with open(qaOutput, 'wb') as f:
-            pickle.dump((qas, graph_documents), f)
+
+        with open(qaGraph, 'wb') as f:
+            pickle.dump((qas_list, graph_documents), f)
 
     if verbose:
-        print(qas)
+        print("\n".join(qas_list))
     createGraph(graph_documents)
     
     if verbose:
         print("Relationships:")
-        for rel in graph_documents[0].relationships:
-            print(f"{rel.source.id} -[{rel.type}]-> {rel.target.id}")
+        for doc in graph_documents:
+            for rel in doc.relationships:
+                print(f"{rel.source.id} -[{rel.type}]-> {rel.target.id}")
 
         print("\nNodes:")
         seen_ids = set()
-        for rel in graph_documents[0].relationships:
-            for node in [rel.source, rel.target]:
-                if node.id not in seen_ids:
-                    seen_ids.add(node.id)
-                    print(f"Node ID: {node.id}, Type: {node.type}")
+        for doc in graph_documents:
+            for rel in doc.relationships:
+                for node in [rel.source, rel.target]:
+                    if node.id not in seen_ids:
+                        seen_ids.add(node.id)
+                        print(f"Node ID: {node.id}, Type: {node.type}")
                     
 """
 Unused in this project as it takes too long
@@ -416,10 +436,10 @@ Combines knowledge graphs made from QAs and Raw Chunks
 
 Currently ignores knowledge graph made from raw chunks
 """ 
-def buildKG(verbose=False, override=False):
+def buildKG(verbose=False, override=False, dummy=False):
     setupData(files, clear=True)
     
-    buildGraphQA(verbose=verbose, override=override)
+    buildGraphQA(verbose=verbose, override=override, dummy=dummy)
     #buildGraphChunks()
             
 """

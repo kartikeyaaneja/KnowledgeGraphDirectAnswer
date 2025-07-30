@@ -5,27 +5,46 @@ Evaluates a single predicted answer using the LLM
 
 - row: row of a dataframe with question, expected answer, and predicted answer from graph RAG system
 """
-def check_contains_with_llama(row):
-    # Prompt to use LLM as judge    
+def check_contains_with_llama(row, pertub=False):
+    if pertub:
+        queryCol = "pertub_query"
+        predictedCol = "pertub_predicted"
+    else:
+        queryCol = "query"
+        predictedCol = "predicted"
+    
+    # Prompt to use LLM as judge
+    system_prompt = "You are an evaluator assessing whether a predicted answer captures the **main meaning** of the expected answer."
     prompt = f"""
-You are a helpful evaluator. For the given query, determine if the predicted answer is correct and matches with the expected answer.
-The predicted can contain other statements not relevant but just determine if it contains the expected statements
+You are a generous evaluator. Your goal is to determine whether the **predicted answer reflects the intended meaning** of the expected answer, even if the wording is different or the match is only partial.
+
+- Be lenient: allow paraphrases, synonyms, and generalizations.
+- The predicted answer does **not** need to include all details, but it should reflect the **main idea** clearly.
+- If the core meaning of the expected answer is **clearly present or paraphrased**, consider it a match.
+- Do **not** accept answers that are vague, mostly unrelated, or mention the topic without conveying the intent.
+- Ignore unrelated or repetitive filler.
 
 Query:
-{row['query']}
+{row[queryCol]}
 
-Expected Answer:
+Expected Answer (main idea to be reflected):
 {row['expected']}
 
 Predicted Answer:
-{row['predicted']}
+{row[predictedCol]}
 
-Respond only with "Yes" or "No" — no explanations. Does one of the sentences in the predicted answer contain the expected answer?
+Does the predicted answer contain the **main idea or intent** of the expected answer in any form (direct, indirect, partial, or paraphrased), as long as it is clear and relevant?
+
+Respond only with "Yes" or "No".
 """
+
     try:
         response = ollama.chat(
             model='llama3.2',
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
             options={"temperature": 0}
         )
         answer = response["message"]["content"].strip().lower()
@@ -38,25 +57,73 @@ Respond only with "Yes" or "No" — no explanations. Does one of the sentences i
     except Exception as e:
         print(f"Error for row:\n{row}\n{e}")
         return "Error"
+    
+"""
+Use LLaMA 3.2 via Ollama to generate a paraphrased question using synonyms.
+"""
+def pertub_question(prompt):
+    system_prompt = (
+        "You are a helpful assistant. Rephrase the following question using synonyms, "
+        "preserving its meaning and intent. Provide only ONE rephrased version."
+    )
+    full_prompt = f"Rephrase this question into a single alternative form: {prompt}"
+
+    try:
+        response = ollama.chat(model="llama3.2", messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": full_prompt}
+        ])
+        return response['message']['content'].strip()
+    except Exception as e:
+        return f"Error: {e}"
 
 """
 Evaluates the Graph RAG system on quesitions that were used to build it
 
 - runAgain: run the evaluation again or load saved evaluation
 """
-def recallEval(runAgain=False):
-    if os.path.exists(qaAnswered) and not runAgain:
-        df = pd.read_json(qaAnswered)
+def ragEval(predictAgain=False, evalAgain=False, dummy=False, pertub=False):
+    if dummy:            
+        qaInp = dummyQA
+        qaAns = dummyQAAns
     else:
-        df = pd.read_json(qaInput)
-        # Use GraphRAG to predict each question
-        df["predicted"] = df["query"].apply(lambda x:answerQuestion(x, filterLimit=0, minimum=4))
-        df.to_json(qaAnswered)
-    
-    # Store LLM's evaluation
-    if "llama_eval" not in df.columns:
-        df["llama_eval"] = df.apply(check_contains_with_llama, axis=1)
-        df.to_json(qaAnswered)
+        if not os.path.exists(actualQA):
+            df = pd.read_json(actualQARaw)
+            df = df[["question", "answer"]]
+            df = df.rename(columns={"question": "query", "answer": "expected"})
+            df.to_json(actualQA)
         
+        qaInp = actualQA
+        qaAns = actualQAAns
+    
+    if os.path.exists(qaAns):
+        df = pd.read_json(qaAns)
+    else:
+        df = pd.read_json(qaInp)
+    
+    if pertub:
+        if "pertub_query" not in df.columns or predictAgain:
+            df["pertub_query"] = df["query"].progress_apply(pertub_question)
+            df.to_json(qaAns)
+            
+        predictedCol = "pertub_predicted"
+        queryCol = "pertub_query"
+        evalCol = "pertub_eval"
+            
+    else:
+        
+        predictedCol = "predicted"
+        queryCol = "query"
+        evalCol = "llama_eval"
+    
+    if predictedCol not in df.columns or predictAgain:
+        df[predictedCol] = df[queryCol].progress_apply(lambda x:answerQuestion(x, filterLimit=0, minimum=4))
+        df.to_json(qaAns)
+
+    # Store LLM's evaluation
+    if evalCol not in df.columns or evalAgain:
+        df[evalCol] = df.progress_apply(lambda x:check_contains_with_llama(x, pertub), axis=1)
+        df.to_json(qaAns)
+
     # Return accuracy
-    return sum(df["llama_eval"] == "Yes") / len(df)
+    return sum(df[evalCol] == "Yes") / len(df)
