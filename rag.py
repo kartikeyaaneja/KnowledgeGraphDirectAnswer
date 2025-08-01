@@ -1,35 +1,19 @@
 from embeddings import *
 
-class Entities(BaseModel):
-    names: List = Field(
-        description="All the person, organization, or business entities that appear in the text",
-    )
-
-"""
-Extract entities from the text to be later used in fuzzy search
-
-- text: Text to extract entities from
-"""
 def extract_entities(text):
     text = remove_lucene_chars(text)
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", "You are an entity extraction assistant specialized in identifying persons, organizations, and business names."),
-            (
-                "human",
-                "Extract all person, organization, and business entity names from the following text.\n"
-                "Return only a JSON array of unique entity names (strings), without explanation or extra text.\n"
-                "Text:\n{question}"
-            ),
-        ]
-    )
-    
-    llmEntityExtractorName = "gpt-3.5-turbo"
-    llmEntityExtractor = ChatOpenAI(model=llmEntityExtractorName, temperature=0)
-    
-    entity_chain = prompt | llmEntityExtractor.with_structured_output(Entities)
-    result = entity_chain.invoke({"question": text}).names
-    return result
+    tokenizer = AutoTokenizer.from_pretrained(entity_extractor_model_name)
+    model = AutoModelForTokenClassification.from_pretrained(entity_extractor_model_name)
+
+    ner_pipe = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
+
+    text = text.title()
+    entities = ner_pipe(text)
+
+    return [e["word"] for e in entities]
+
+def escape_lucene_special_chars(text):
+    return re.sub(r'([+\-!(){}\[\]^"~*?:\\/|&])', r'\\\1', text)
 
 """
 Extract entities from the question and look up wether those entites appear in the Graph database
@@ -42,7 +26,8 @@ def fuzzyRetriever(question):
     
     entities = extract_entities(question)
     
-    questions = ["~2 AND ".join(entity.split()) + "~2" for entity in entities]
+    questions = ["~2 AND ".join(escape_lucene_special_chars(word) for word in entity.split()) + "~2"
+                 for entity in entities]
 
     for fuzzy in questions:
         cypher = f"""

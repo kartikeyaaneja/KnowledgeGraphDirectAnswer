@@ -16,7 +16,8 @@ from typing import Tuple, List
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from transformers import pipeline
-
+from transformers import AutoTokenizer, AutoModelForTokenClassification
+from transformers.utils import logging as hf_logging
 
 from FlagEmbedding import FlagReranker
 from pydantic import BaseModel, Field
@@ -47,6 +48,7 @@ from langchain_community.vectorstores.neo4j_vector import remove_lucene_chars
 
 import warnings
 warnings.filterwarnings("ignore")
+hf_logging.set_verbosity_error()
 tqdm.pandas()
 
 NEO4J_URI=""
@@ -78,6 +80,8 @@ saveDataPath = "./data"
 
 chat_model_name = "gpt-3.5-turbo"
 llm = ChatOpenAI(model=chat_model_name, temperature=0)
+
+entity_extractor_model_name = "dslim/bert-base-NER"
 
 embedding_model_name = "text-embedding-3-large"
 embedding_model = OpenAIEmbeddings(

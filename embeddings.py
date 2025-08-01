@@ -100,7 +100,7 @@ Creates embeddings all nodes, node types and raw chunks
 """
 def createEmbeddings():
     embedNodes("`__Entity__`", "id", "entityEmbeddings")
-    embedNodes("Document", "text", "docEmbeddings")
+    #embedNodes("Document", "text", "docEmbeddings")
     embedLabels()
 
 """
